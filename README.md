@@ -1,52 +1,50 @@
 # Automatic Light Tracking System (LDR–Servo, LabVIEW & Arduino)
 
-A closed-loop single-axis solar/light tracking system that measures differential light intensity using two **LDR (photoresistor)** sensors, processes the error in **LabVIEW** via the **LINX** toolkit over serial (`COM3`), and drives a **servo motor** to align with the light source.
+A closed-loop single-axis solar/light tracking system built with two **LDR (photoresistor)** sensors, an **Arduino UNO**, a **TowerPro SG90 9g micro servo**, and **LabVIEW** (using the **LINX** toolkit over `COM3` serial) to continuously align a tilt platform toward the brightest light source.
 
-## System Architecture
-1. **Sensing Stage:** Two LDR voltage-divider circuits wired to Arduino analog inputs measure light intensity ($V_1$, $V_2$) and compute the differential voltage $\Delta V = V_1 - V_2$.
-2. **Data Acquisition & Control (LabVIEW + LINX):** Reads analog voltages in real time via LINX `Analog Read` VIs, computes the target angle $\theta$, and commands the servo via `Servo Set Pulse Width VI` with an emergency `STOP` control.
-3. **Actuation Stage:** Standard RC servo motor (5V shared rail) tilts the solar panel / sensor mount across $0^\circ\text{--}180^\circ$.
+## Hardware Setup & Pinout
+
+| Component | Arduino UNO Pin | Notes |
+|---|---|---|
+| **LDR 1** (Voltage divider) | `A1` | Primary light sensor (`Analog Read 1 Chan`) |
+| **LDR 2** (Voltage divider) | `A2` | Secondary light sensor (`Analog Read 1 Chan`) |
+| **SG90 9g Micro Servo** | `D3` | PWM signal via LINX `Servo Set Pulse Width.vi` |
+| **Power Rail** | `5V` / `GND` | Shared 5V and common ground across sensors and servo |
+| **PC Interface** | USB (`COM3`) | Real-time serial telemetry to LabVIEW LINX |
 
 ## Corrected Mathematical Model & Transfer Function
 
-### 1. Differential Voltage-to-Angle Mapping
-For a symmetric sensor range $\Delta V \in [-0.9\text{ V},\ +0.9\text{ V}]$ centered at midday ($\theta_0 = 90^\circ$):
+### 1. Differential Voltage-to-Angle & Servo PWM Mapping
+For a symmetric two-LDR differential voltage range $\Delta V = V_1 - V_2 \in [-0.9\text{ V},\ +0.9\text{ V}]$ centered at midday ($\theta_0 = 90^\circ$):
 
-$$\theta = K \cdot \Delta V + 90^\circ$$
+$$\theta = \operatorname{clamp}\!\left(K \cdot \Delta V + 90^\circ,\ 0^\circ,\ 180^\circ\right), \quad K = \frac{90^\circ}{0.9\text{ V}} = 100^\circ/\text{V}$$
 
-To keep $\theta$ strictly within the physical servo limits $[0^\circ,\ 180^\circ]$:
+For an **SG90** micro servo ($500\text{--}2500\,\mu\text{s}$ across $0^\circ\text{--}180^\circ$, midpoint $1500\,\mu\text{s} = 90^\circ$):
 
-$$K = \frac{90^\circ}{0.9\text{ V}} = 100^\circ/\text{V}$$
+$$\text{Pulse Width }(\mu\text{s}) = 500 + \frac{2000}{180}\,\theta \approx 500 + 11.1111\,\theta$$
 
-Using measured sensor readings $V_1 = 3.06152\text{ V}$ and $V_2 = 2.67578\text{ V}$ ($\Delta V = 0.38574\text{ V}$):
+### 2. Second-Order System Identification
+From experimental step-response specifications ($\text{PO} = 33.3\%$, peak time $T_p = 0.3178\text{ s}$):
 
-$$\theta = 100 \times 0.38574 + 90^\circ = 128.57^\circ$$
+| Parameter | Formula | Original Report | Corrected Value |
+|---|---|---|---|
+| **Damping Ratio ($\zeta$)** | $\frac{-\ln(\text{PO}/100)}{\sqrt{\pi^2 + \ln^2(\text{PO}/100)}}$ | $0.3178$ *(error)* | **$0.3304$** |
+| **Damped Frequency ($\omega_d$)** | $\frac{\pi}{T_p}$ | $9.88\text{ rad/s}$ | **$9.885\text{ rad/s}$** |
+| **Natural Frequency ($\omega_n$)** | $\frac{\omega_d}{\sqrt{1 - \zeta^2}}$ | $10.35\text{ rad/s}$ | **$10.473\text{ rad/s}$** |
+| **Closed-Loop Poles** | $-\zeta\omega_n \pm j\omega_d$ | $-3.29 \pm 9.82j$ | **$-3.46 \pm 9.89j$** |
+| **Settling Time ($T_s$, 2%)** | $\frac{4}{\zeta\omega_n}$ | $1.365\text{ s}$ | **$1.156\text{ s}$** |
+| **Transfer Function $G(s)$** | $\frac{\omega_n^2}{s^2 + 2\zeta\omega_n s + \omega_n^2}$ | $\frac{107.2}{s^2 + 6.58s + 107.2}$ | **$\frac{109.69}{s^2 + 6.92s + 109.69}$** |
 
-In LabVIEW LINX, the `Servo Set Pulse Width VI` accepts PWM pulse width in **microseconds** ($\mu\text{s}$), mapped linearly from angle $\theta \in [0^\circ, 180^\circ]$ (e.g., $500\text{--}2500\,\mu\text{s}$ or $1000\text{--}2000\,\mu\text{s}$ depending on servo calibration).
+### Key Engineering Corrections Over Original Course Report
+1. **Transfer Function Fit:** Corrected the omitted minus sign in $\zeta$ and the reuse of $T_p = 0.3178$ as $\zeta$, which caused LabVIEW's simulated step response to yield $34.83\%$ overshoot and $T_p = 0.326\text{ s}$ instead of the target $33.3\%$ and $0.3178\text{ s}$.
+2. **Gain & PWM Clamping:** Reduced symmetric proportional gain from $200^\circ/\text{V}$ (which saturates past $180^\circ$) to $100^\circ/\text{V}$, and documented that `Servo Set Pulse Width.vi` expects pulse width clamped to $[500, 2500]\,\mu\text{s}$ (midpoint $1500\,\mu\text{s}$) rather than $[0, 180]$ degrees.
+3. **Block Diagram Topology:** Corrected the unity-feedback loop so $G(s)$ is placed in the forward path rather than the feedback path.
 
-### 2. Second-Order Control System Identification
-From the experimental step response ($PO = 33.3\%$, peak time $T_p = 0.3178\text{ s}$):
-
-| Parameter | Formula | Value |
-|---|---|---|
-| **Damping Ratio ($\zeta$)** | $\frac{-\ln(PO/100)}{\sqrt{\pi^2 + \ln^2(PO/100)}}$ | **$0.3304$** |
-| **Damped Natural Frequency ($\omega_d$)** | $\frac{\pi}{T_p}$ | **$9.885\text{ rad/s}$** |
-| **Natural Frequency ($\omega_n$)** | $\frac{\omega_d}{\sqrt{1 - \zeta^2}}$ | **$10.473\text{ rad/s}$** |
-| **Settling Time ($T_s$, 2%)** | $\frac{4}{\zeta \omega_n}$ | **$1.156\text{ s}$** |
-
-Resulting closed-loop second-order transfer function:
-
-$$G(s) = \frac{\omega_n^2}{s^2 + 2\zeta\omega_n s + \omega_n^2} = \frac{109.69}{s^2 + 6.92s + 109.69}$$
-
-## LabVIEW & Project Files
-- `project 1.vi` — Main closed-loop LDR-to-servo tracking VI (LINX serial acquisition, angle mapping, servo PWM output, STOP safety control).
-- `servo test1.vi` — Standalone servo sweep/calibration VI.
-- `Step Response.vi` — Closed-loop step response testing and gain tuning VI.
-- `simulate_step_response.py` — Python script verifying the 2nd-order transfer function step response and performance metrics.
-
-*(Note: Upload the binary `.vi` files and PDF report from the local LabVIEW project archive if running directly in LabVIEW.)*
+## Project Files
+- `simulate_step_response.py` — Python verification script reproducing all control metrics and simulated peak response.
+- LabVIEW VIs: `project 1.vi`, `servo test1.vi`, `Step Response.vi`.
 
 ## Team & Supervision
 - **Course Project:** Automatic Control Systems — Mechatronics Engineering, Egypt-Japan University for Science and Technology (E-JUST), May 2025
-- **Team Members:** Mahmoud A. Mohamed, Shahd Mohamed Ali, Aya Gamal, Adham Yasser
-- **Supervisor:** Prof. Ayman NadaLINX) with 2nd-order transfer function control modeling
+- **Team Members:** [Mahmoud A. Mohamed](https://github.com/MamoudAlaa), Shahd Mohamed Ali, Aya Gamal, Adham Yasser
+- **Supervisor:** Prof. Ayman Nada
