@@ -2,6 +2,8 @@
 
 A closed-loop single-axis solar/light tracking system built with two **LDR (photoresistor)** sensors, an **Arduino UNO**, a **TowerPro SG90 9g micro servo**, and **LabVIEW** (using the **LINX** toolkit over `COM3` serial) to continuously align a tilt platform toward the brightest light source.
 
+![Hardware Prototype](images/hardware_prototype.png)
+
 ## Hardware Setup & Pinout
 
 | Component | Arduino UNO Pin | Notes |
@@ -11,6 +13,13 @@ A closed-loop single-axis solar/light tracking system built with two **LDR (phot
 | **SG90 9g Micro Servo** | `D3` | PWM signal via LINX `Servo Set Pulse Width.vi` |
 | **Power Rail** | `5V` / `GND` | Shared 5V and common ground across sensors and servo |
 | **PC Interface** | USB (`COM3`) | Real-time serial telemetry to LabVIEW LINX |
+
+## LabVIEW Implementation
+
+### Front Panel & Block Diagram
+![LabVIEW Front Panel](images/labview_front_panel.png)
+
+![LabVIEW Block Diagram](images/labview_block_diagram.png)
 
 ## Corrected Mathematical Model & Transfer Function
 
@@ -35,14 +44,18 @@ From experimental step-response specifications ($\text{PO} = 33.3\%$, peak time 
 | **Settling Time ($T_s$, 2%)** | $\frac{4}{\zeta\omega_n}$ | $1.365\text{ s}$ | **$1.156\text{ s}$** |
 | **Transfer Function $G(s)$** | $\frac{\omega_n^2}{s^2 + 2\zeta\omega_n s + \omega_n^2}$ | $\frac{107.2}{s^2 + 6.58s + 107.2}$ | **$\frac{109.69}{s^2 + 6.92s + 109.69}$** |
 
-### Key Engineering Corrections Over Original Course Report
-1. **Transfer Function Fit:** Corrected the omitted minus sign in $\zeta$ and the reuse of $T_p = 0.3178$ as $\zeta$, which caused LabVIEW's simulated step response to yield $34.83\%$ overshoot and $T_p = 0.326\text{ s}$ instead of the target $33.3\%$ and $0.3178\text{ s}$.
-2. **Gain & PWM Clamping:** Reduced symmetric proportional gain from $200^\circ/\text{V}$ (which saturates past $180^\circ$) to $100^\circ/\text{V}$, and documented that `Servo Set Pulse Width.vi` expects pulse width clamped to $[500, 2500]\,\mu\text{s}$ (midpoint $1500\,\mu\text{s}$) rather than $[0, 180]$ degrees.
-3. **Block Diagram Topology:** Corrected the unity-feedback loop so $G(s)$ is placed in the forward path rather than the feedback path.
+![Step Response Verification](images/step_response_verification.png)
 
-## Project Files
-- `simulate_step_response.py` — Python verification script reproducing all control metrics and simulated peak response.
-- LabVIEW VIs: `project 1.vi`, `servo test1.vi`, `Step Response.vi`.
+### Key Engineering Corrections Over Original Course Report
+1. **Transfer Function Fit:** The original report omitted the minus sign in the $\zeta$ equation and reused $T_p = 0.3178$ as $\zeta$, causing LabVIEW's simulated step response to produce $34.83\%$ overshoot and $T_p = 0.326\text{ s}$ instead of the target $33.3\%$ and $0.3178\text{ s}$.
+2. **Gain & Clamping:** Reduced symmetric gain from $200^\circ/\text{V}$ (which saturates past $180^\circ$) to $100^\circ/\text{V}$, and noted that `Servo Set Pulse Width.vi` expects pulse width clamped to $[500, 2500]\,\mu\text{s}$ rather than $[0, 180]$ degrees.
+3. **Block Diagram Topology:** Corrected the unity-feedback loop so $G(s)$ sits in the forward path rather than the feedback path.
+
+## Repository Structure
+- `images/` — Hardware prototype photo, LabVIEW front panel & block diagrams, and step-response verification plot.
+- `labview/` — Original LabVIEW VIs (`project 1.vi`, `servo test1.vi`, `Step Response.vi`).
+- `docs/` — Original course report (`final_control_original.pdf`).
+- `simulate_step_response.py` — Python verification script reproducing all control metrics and plots.
 
 ## Team & Supervision
 - **Course Project:** Automatic Control Systems — Mechatronics Engineering, Egypt-Japan University for Science and Technology (E-JUST), May 2025
